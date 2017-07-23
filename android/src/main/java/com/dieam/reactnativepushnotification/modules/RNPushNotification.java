@@ -31,6 +31,7 @@ public class RNPushNotification extends ReactContextBaseJavaModule implements Ac
     private RNPushNotificationHelper mRNPushNotificationHelper;
     private final Random mRandomNumberGenerator = new Random(System.currentTimeMillis());
     private RNPushNotificationJsDelivery mJsDelivery;
+    private Map<String, ReadableMap> mRegisteredActions;
 
     public RNPushNotification(ReactApplicationContext reactContext) {
         super(reactContext);
@@ -42,6 +43,8 @@ public class RNPushNotification extends ReactContextBaseJavaModule implements Ac
         mRNPushNotificationHelper = new RNPushNotificationHelper(applicationContext);
         // This is used to delivery callbacks to JS
         mJsDelivery = new RNPushNotificationJsDelivery(reactContext);
+        // This is used to cache details about each registered action (ie. whether to launch main activity)
+        mRegisteredActions = new HashMap<String, ReadableMap>();
 
         registerNotificationsRegistration();
     }
@@ -86,8 +89,13 @@ public class RNPushNotification extends ReactContextBaseJavaModule implements Ac
         IntentFilter intentFilter = new IntentFilter();
         // Add filter for each actions.
         for (int i = 0; i < actions.size(); i++) {
-            String action = actions.getString(i);
-            intentFilter.addAction(getReactApplicationContext().getPackageName() + "." + action);
+            ReadableMap actionDetails = actions.getMap(i);
+            String identifier = actionDetails.getString("identifier");
+            String actionIdentifier = getReactApplicationContext().getPackageName() + "." + identifier;
+            if (mRegisteredActions != null) {
+                mRegisteredActions.put(actionIdentifier, actionDetails);
+            }
+            intentFilter.addAction(actionIdentifier);
         }
         getReactApplicationContext().registerReceiver(new BroadcastReceiver() {
             @Override
@@ -101,6 +109,21 @@ public class RNPushNotification extends ReactContextBaseJavaModule implements Ac
                 NotificationManager manager = (NotificationManager) context.getSystemService(context.NOTIFICATION_SERVICE);
                 int notificationID = Integer.parseInt(bundle.getString("id"));
                 manager.cancel(notificationID);
+
+                // Launch the activity if necessary
+                Boolean shouldLaunchMainActivity = false;
+                if (mRegisteredActions != null) {
+                    if (mRegisteredActions.containsKey(intent.getAction()) && mRegisteredActions.get(intent.getAction()).getString("options").equals("foreground")) {
+                        shouldLaunchMainActivity = true;
+                    }
+                }
+
+                if (shouldLaunchMainActivity) {
+                    Intent launchActivityIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+                    launchActivityIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    launchActivityIntent.setPackage(null);
+                    context.startActivity(launchActivityIntent);
+                }
             }
         }, intentFilter);
     }

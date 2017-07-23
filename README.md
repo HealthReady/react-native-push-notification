@@ -269,14 +269,23 @@ For iOS, the repeating notification should land soon. It has already been merged
 
 Two things are required to setup notification actions.
 
-### 1) Specify notification actions for a notification
-This is done by specifying an `actions` parameters while configuring the local notification. This is an array of strings where each string is a notificaiton action that will be presented with the notification.
+### 1) Register notification actions
+This is done through calling the 'registerNotificationActions' method with an array of objects containing information about each unique notification action.
+The structure of each notification action details object will be as follows:
+identifier: string => This uniquely identifies the notification action to the notification receiver.
+options: 'foreground' | 'none' => Describes whether to launch the application when the notification action is pressed or not. 'foreground' will launch the application.
 
-For e.g. `actions: '["Accept", "Reject"]'  // Must be in string format`
+### 2) Specify notification actions for a notification
+This is done by specifying an `actions` parameters while configuring the local notification.
+This is an array of objects where each object holds information about each notification action that will be presented with the notification.
+It shall contain a 'title', which is a string representing the label of notification action, and an 'identifier',
+which is a string representing the unique identifier for that notification action that you have registered in the previous step.
+
+For e.g. `actions: '[{title: "Accept", identifier: "Accept"}, {title: "Reject", identifier: "Reject"}]'  // Must be in string format`
 
 The array itself is specified in string format to circumvent some problems because of the way JSON arrays are handled by react-native android bridge.
 
-### 2) Specify handlers for the notification actions
+### 3) Specify handlers for the notification actions
 For each action specified in the `actions` field, we need to add a handler that is called when the user clicks on the action. This can be done in the `componentWillMount` of your main app file or in a separate file which is imported in your main app file. Notification actions handlers can be configured as below:
 
 ```
@@ -284,7 +293,12 @@ import PushNotificationAndroid from 'react-native-push-notification'
 
 (function() {
   // Register all the valid actions for notifications here and add the action handler for each action
-  PushNotificationAndroid.registerNotificationActions(['Accept','Reject','Yes','No']);
+  PushNotificationAndroid.registerNotificationActions([
+    {identifier: 'Accept', options: 'none'},
+    {identifier: 'Reject', options: 'none'},
+    {identifier: 'Yes', options: 'none'},
+    {identifier: 'No', options: 'none'}
+  ]);
   DeviceEventEmitter.addListener('notificationActionReceived', function(action){
     console.log ('Notification action received: ' + action);
     const info = JSON.parse(action.dataJSON);

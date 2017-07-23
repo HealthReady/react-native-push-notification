@@ -25,6 +25,7 @@ import com.facebook.react.bridge.ReadableMap;
 
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.util.Arrays;
 
@@ -295,22 +296,28 @@ public class RNPushNotificationHelper {
 
                 // Add button for each actions.
                 for (int i = 0; i < actionsArray.length(); i++) {
-                    String action;
+                    String actionTitle;
+                    String actionIdentifier;
+                    JSONObject actionDetails;
+
                     try {
-                        action = actionsArray.getString(i);
+//                        action = actionsArray.getString(i);
+                        actionDetails = actionsArray.getJSONObject(i);
+                        actionTitle = actionDetails.getString("title");
+                        actionIdentifier = actionDetails.getString("identifier");
                     } catch (JSONException e) {
                         Log.e(LOG_TAG, "Exception while getting action from actionsArray.", e);
                         continue;
                     }
 
                     Intent actionIntent = new Intent();
-                    actionIntent.setAction(context.getPackageName() + "." + action);
+                    actionIntent.setAction(context.getPackageName() + "." + actionIdentifier);
                     // Add "action" for later identifying which button gets pressed.
-                    bundle.putString("action", action);
+                    bundle.putString("action", actionIdentifier);
                     actionIntent.putExtra("notification", bundle);
                     PendingIntent pendingActionIntent = PendingIntent.getBroadcast(context, notificationID, actionIntent,
                             PendingIntent.FLAG_UPDATE_CURRENT);
-                    notification.addAction(icon, action, pendingActionIntent);
+                    notification.addAction(icon, actionTitle, pendingActionIntent);
                 }
             }
 
