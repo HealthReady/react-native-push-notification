@@ -6,6 +6,8 @@ import android.app.Application;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.ContentProvider;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -19,6 +21,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.support.v4.app.NotificationCompat;
+import android.support.v4.content.FileProvider;
 import android.util.Log;
 
 import com.facebook.react.bridge.ReadableMap;
@@ -28,6 +31,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.Arrays;
+import java.io.File;
 
 import static com.dieam.reactnativepushnotification.modules.RNPushNotification.LOG_TAG;
 import static com.dieam.reactnativepushnotification.modules.RNPushNotificationAttributes.fromJson;
@@ -234,6 +238,8 @@ public class RNPushNotificationHelper {
                 Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
                 String soundName = bundle.getString("soundName");
                 if (soundName != null) {
+                    // using lower case as android resource URIs are case insensitive
+                    soundName = soundName.toLowerCase();
                     if (!"default".equalsIgnoreCase(soundName)) {
 
                         // sound name can be full filename, or just the resource name.
@@ -247,8 +253,30 @@ public class RNPushNotificationHelper {
                             soundName = soundName.substring(0, soundName.lastIndexOf('.'));
                             resId = context.getResources().getIdentifier(soundName, "raw", context.getPackageName());
                         }
-
-                        soundUri = Uri.parse("android.resource://" + context.getPackageName() + "/" + resId);
+                        if (resId != 0) {
+                            soundUri = Uri.parse("android.resource://" + context.getPackageName() + "/" + resId);
+                        } else {
+                            // If still not a valid resource id, then the sound isn't in the resources
+                            // Check that the sound exists in the files/Sounds directory of the app
+                            // we use the hopefully case sensitive soundName here rather than
+                            // lowercase as file system paths ARE case sensitive
+                            File soundsPath = new File(context.getFilesDir(), "Sounds");
+                            File file = new File(soundsPath, bundle.getString("soundName"));
+                            if(file.exists()) {
+                                int keyResourceId = context.getResources().getIdentifier("RNPN_FILE_PROVIDER_AUTHORITY", "string", context.getPackageName());
+                                if (keyResourceId != 0) {
+                                    // handle if the provider authority key is missing
+                                    String providerAuthority = context.getString(keyResourceId);
+                                    soundUri = FileProvider.getUriForFile(context,  providerAuthority, file);
+                                    context.grantUriPermission("com.android.systemui", soundUri,
+                                            Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                                } else {
+                                    Log.e(LOG_TAG, "The file provider authority string key is missing, make sure it is set up in your Android Manifest and the resource strings XML file");
+                                }
+                            } else {
+                                Log.e(LOG_TAG, "Could not find a sound from the sounds directory: " + bundle.getString("soundName"));
+                            }
+                        }
                     }
                 }
                 notification.setSound(soundUri);

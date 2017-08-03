@@ -235,6 +235,43 @@ In the location notification json specify the full file name:
 
     soundName: 'my_sound.mp3'
 
+In android, if you wish to play custom sounds from within your app's files directory, you must edit the following files:
+AndroidManifest.xml:
+```xml
+<application>
+    ...
+    <provider
+        android:authorities="com.packagename.fileprovider"
+        android:name="android.support.v4.content.FileProvider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+        <meta-data
+            android:name="android.support.FILE_PROVIDER_PATHS"
+            android:resource="@xml/file_paths" />
+    </provider>
+    ...
+</application>
+```
+Note: Change 'com.packagename' to your package name.
+
+If the res/xml resource directory does not exist, create it, then create an XML file there called 'file_paths.xml'.
+The contents should look something like this:
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="my_custom_sounds" path="Sounds/"/>
+</paths>
+```
+
+Finally, edit your res/values/strings.xml file (again creating one if it doesn't exist):
+```xml
+<string name="RNPN_FILE_PROVIDER_AUTHORITY">com.packagename.fileprovider</string>
+```
+Note: Change 'com.packagename' to your package name.
+
+Finally, as long as you save sounds to your app's files/Sounds/ directory, you will be able to play custom sounds from
+within your app's files directory.
+
 ## Cancelling notifications
 
 ### 1) cancelLocalNotifications
