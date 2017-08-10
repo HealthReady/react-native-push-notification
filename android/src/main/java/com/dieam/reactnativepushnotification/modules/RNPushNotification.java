@@ -120,7 +120,7 @@ public class RNPushNotification extends ReactContextBaseJavaModule implements Ac
 
                 if (shouldLaunchMainActivity) {
                     Intent launchActivityIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-                    launchActivityIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    launchActivityIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     launchActivityIntent.setPackage(null);
                     context.startActivity(launchActivityIntent);
                 }
