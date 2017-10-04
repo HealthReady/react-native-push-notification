@@ -69,12 +69,21 @@ public class RNPushNotificationHelper {
 
     private PendingIntent toScheduleNotificationIntent(Bundle bundle) {
         int notificationID = Integer.parseInt(bundle.getString("id"));
+        String notificationTag = bundle.getString("tag");
 
         Intent notificationIntent = new Intent(context, RNPushNotificationPublisher.class);
+        if (notificationTag != null) {
+            // set dummy action to differentiate intent instead of requestCode
+            notificationIntent.setAction(context.getPackageName() + "." + notificationTag);
+        }
         notificationIntent.putExtra(RNPushNotificationPublisher.NOTIFICATION_ID, notificationID);
+        notificationIntent.putExtra(RNPushNotificationPublisher.NOTIFICATION_TAG, notificationTag);
         notificationIntent.putExtras(bundle);
 
-        return PendingIntent.getBroadcast(context, notificationID, notificationIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+        // Prevent IllegalArgumentException by limiting the range of the requestCode to 16 bits
+        int requestCode = notificationID;// % 65536;
+
+        return PendingIntent.getBroadcast(context, requestCode, notificationIntent, PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     public void sendNotificationScheduled(Bundle bundle) {
@@ -102,16 +111,18 @@ public class RNPushNotificationHelper {
 
         RNPushNotificationAttributes notificationAttributes = new RNPushNotificationAttributes(bundle);
         String id = notificationAttributes.getId();
+        String tag = notificationAttributes.getTag();
+        String persistedId = RNPushNotificationHelper.getPersistedId(id, tag);
 
-        Log.d(LOG_TAG, "Storing push notification with id " + id);
+        Log.d(LOG_TAG, "Storing push notification with id " + persistedId);
 
         SharedPreferences.Editor editor = scheduledNotificationsPersistence.edit();
-        editor.putString(id, notificationAttributes.toJson().toString());
+        editor.putString(persistedId, notificationAttributes.toJson().toString());
         commit(editor);
 
-        boolean isSaved = scheduledNotificationsPersistence.contains(id);
+        boolean isSaved = scheduledNotificationsPersistence.contains(persistedId);
         if (!isSaved) {
-            Log.e(LOG_TAG, "Failed to save " + id);
+            Log.e(LOG_TAG, "Failed to save " + persistedId);
         }
 
         sendNotificationScheduledCore(bundle);
@@ -152,6 +163,7 @@ public class RNPushNotificationHelper {
                 Log.e(LOG_TAG, "No notification ID specified for the notification");
                 return;
             }
+            String notificationTag = bundle.getString("tag");
 
             Resources res = context.getResources();
             String packageName = context.getPackageName();
@@ -230,6 +242,10 @@ public class RNPushNotificationHelper {
             notification.setStyle(new NotificationCompat.BigTextStyle().bigText(bigText));
 
             Intent intent = new Intent(context, intentClass);
+            if (notificationTag != null) {
+                // set dummy action to differentiate intent instead of requestCode
+                intent.setAction(context.getPackageName() + "." + notificationTag);
+            }
             intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
             bundle.putBoolean("userInteraction", true);
             intent.putExtra("notification", bundle);
@@ -357,9 +373,11 @@ public class RNPushNotificationHelper {
             // to the user which we shouldn't do. So, remove the notification from the shared
             // preferences once it has been shown to the user. If it is a repeating notification
             // it will be scheduled again.
-            if (scheduledNotificationsPersistence.getString(notificationIdString, null) != null) {
+
+            String persistedId = RNPushNotificationHelper.getPersistedId(notificationIdString, notificationTag);
+            if (scheduledNotificationsPersistence.getString(persistedId, null) != null) {
                 SharedPreferences.Editor editor = scheduledNotificationsPersistence.edit();
-                editor.remove(notificationIdString);
+                editor.remove(persistedId);
                 commit(editor);
             }
 
@@ -445,7 +463,15 @@ public class RNPushNotificationHelper {
         Log.i(LOG_TAG, "Cancelling all notifications");
 
         for (String id : scheduledNotificationsPersistence.getAll().keySet()) {
-            cancelScheduledNotification(id);
+            try {
+                String notificationAttributesJson = scheduledNotificationsPersistence.getString(id, null);
+                if (notificationAttributesJson != null) {
+                    RNPushNotificationAttributes notificationAttributes = fromJson(notificationAttributesJson);
+                    cancelScheduledNotification(notificationAttributes.getId(), notificationAttributes.getTag());
+                }
+            } catch (JSONException e) {
+                Log.w(LOG_TAG, "Problem dealing with scheduled notification " + id, e);
+            }
         }
     }
 
@@ -456,7 +482,7 @@ public class RNPushNotificationHelper {
                 if (notificationAttributesJson != null) {
                     RNPushNotificationAttributes notificationAttributes = fromJson(notificationAttributesJson);
                     if (notificationAttributes.matches(userInfo)) {
-                        cancelScheduledNotification(id);
+                        cancelScheduledNotification(notificationAttributes.getId(), notificationAttributes.getTag());
                     }
                 }
             } catch (JSONException e) {
@@ -465,27 +491,33 @@ public class RNPushNotificationHelper {
         }
     }
 
-    private void cancelScheduledNotification(String notificationIDString) {
-        Log.i(LOG_TAG, "Cancelling notification: " + notificationIDString);
+    private void cancelScheduledNotification(String notificationIDString, String notificationTag) {
+        Log.i(LOG_TAG, "Cancelling notification: " + notificationIDString + (notificationTag == null ? "" : " tag: " + notificationTag));
 
         // remove it from the alarm manger schedule
         Bundle b = new Bundle();
         b.putString("id", notificationIDString);
+        b.putString("tag", notificationTag);
         getAlarmManager().cancel(toScheduleNotificationIntent(b));
 
-        if (scheduledNotificationsPersistence.contains(notificationIDString)) {
+        String persistedId = RNPushNotificationHelper.getPersistedId(notificationIDString, notificationTag);
+        if (scheduledNotificationsPersistence.contains(persistedId)) {
             // remove it from local storage
             SharedPreferences.Editor editor = scheduledNotificationsPersistence.edit();
-            editor.remove(notificationIDString);
+            editor.remove(persistedId);
             commit(editor);
         } else {
-            Log.w(LOG_TAG, "Unable to find notification " + notificationIDString);
+            Log.w(LOG_TAG, "Unable to find notification " + persistedId);
         }
 
         // removed it from the notification center
         NotificationManager notificationManager = notificationManager();
 
-        notificationManager.cancel(Integer.parseInt(notificationIDString));
+        if (notificationTag == null) {
+            notificationManager.cancel(Integer.parseInt(notificationIDString));
+        } else {
+            notificationManager.cancel(notificationTag, Integer.parseInt(notificationIDString));
+        }
     }
 
     private NotificationManager notificationManager() {
@@ -497,6 +529,14 @@ public class RNPushNotificationHelper {
             editor.commit();
         } else {
             editor.apply();
+        }
+    }
+
+    private static String getPersistedId(String id, String tag) {
+        if (tag == null) {
+            return id;
+        } else {
+            return id + "." + tag;
         }
     }
 }

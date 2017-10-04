@@ -272,4 +272,6 @@ public class RNPushNotificationAttributes {
         return fireDate;
     }
 
+    public String getTag() { return tag; }
+
 }
